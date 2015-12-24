@@ -156,6 +156,26 @@ object Recommender {
     }.mean()
   }
     
+  def recommend(sc: SparkContext, rawUserArtistData: RDD[String], rawArtistData: RDD[String], rawArtistAlias: RDD[String]) : Unit = {
+    val bArtistAlias = sc.broadcast(buildArtistAlias(rawArtistAlias))
+    val allData = buildRatings(rawUserArtistData,bArtistAlias).cache()
+    val model = ALS.trainImplicit(allData,50,10,1.0,40.0)
+    allData.unpersist()
+    
+    val userId = 1043789
+    
+    val recommendations = model.recommendProducts(userId, 5)
+    val recommendedProducts = recommendations.map(_.product).toSet
+    
+    val artistById = buildArtistById(rawArtistData)
+    artistById.filter{case (id,name) => recommendedProducts.contains(id)}.values.collect().foreach(println)
+    
+    val someUsers = allData.map(_.user).distinct().take(100)
+    val someRecommendations = someUsers.map(user => model.recommendProducts(user,5))
+    someRecommendations.map(recs => recs.head.user + " -> " + recs.map(_.product).mkString(",")).foreach(println)
+    
+    unpersists(model)
+  }
   
    def unpersists(model: MatrixFactorizationModel): Unit = {
      model.userFeatures.unpersist()
